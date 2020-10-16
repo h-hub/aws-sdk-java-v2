@@ -61,6 +61,12 @@ type: {change_type}
 # or "AWS SDK for Java v2" if it's an SDK change to the core, runtime etc
 category: {category}
 
+# Your GitHub user name to be included in the CHANGELOG.
+# Every contribution counts and we would like to recognize
+# your contribution!
+# Leave it empty if you would prefer not to be mentioned.
+github_username: {github_username}
+
 The description of the change. Feel free to use Markdown here.
 description: {description}
 """
@@ -76,6 +82,7 @@ def new_changelog_entry(args):
             'type': args.change_type,
             'category': args.category,
             'description': args.description,
+            'github_username': args.github_username
         }
     else:
         parsed_values = get_values_from_editor(args)
@@ -86,6 +93,7 @@ def new_changelog_entry(args):
             return 1
 
     replace_issue_references(parsed_values, args.repo)
+    add_contributor_if_needed(parsed_values)
     filename = write_new_change(parsed_values)
     return stage_file(filename)
 
@@ -94,7 +102,7 @@ def get_missing_parts(parsed_values):
 
 
 def all_values_provided(args):
-    return args.change_type and args.category and args.description
+    return args.change_type and args.category and args.description and args.github_username
 
 
 def get_values_from_editor(args):
@@ -103,6 +111,7 @@ def get_values_from_editor(args):
             change_type=args.change_type,
             category=args.category,
             description=args.description,
+            github_username=args.github_username
         )
         f.write(contents)
         f.flush()
@@ -128,6 +137,14 @@ def replace_issue_references(parsed, repo_name):
     new_description = re.sub('(?<!\[)#\d+', linkify, description)
     parsed['description'] = new_description
 
+def add_contributor_if_needed(parsed):
+    description = parsed['description']
+    contributor = parsed['github_username']
+    if contributor:
+        new_description = description + ' (Thanks for @' + contributor + "'s contribution!)"
+        parsed['description'] = new_description
+
+
 def write_new_change(parsed_values):
     if not os.path.isdir(CHANGES_DIR):
         os.makedirs(CHANGES_DIR)
@@ -137,8 +154,15 @@ def write_new_change(parsed_values):
         os.makedirs(dirname)
     # Need to generate a unique filename for this change.
     category = parsed_values['category']
+
+    finalized_content = {
+        'type': parsed_values['type'],
+        'category': parsed_values['category'],
+        'description': parsed_values['description']
+    }
+
     short_summary = ''.join(filter(lambda x: x in VALID_CHARS, category))
-    contents = json.dumps(parsed_values, indent=4) + "\n"
+    contents = json.dumps(finalized_content, indent=4) + "\n"
     contents_digest = hashlib.sha1(contents.encode('utf-8')).hexdigest()
     filename = '{type_name}-{summary}-{digest}.json'.format(
         type_name=parsed_values['type'],
@@ -176,6 +200,8 @@ def parse_filled_in_contents(contents):
             parsed['type'] = t
         elif 'category' not in parsed and line.startswith('category:'):
             parsed['category'] = line[len('category:'):].strip()
+        elif 'github_username' not in parsed and line.startswith('github_username:'):
+            parsed['github_username'] = line[len('github_username:'):].strip()
         elif 'description' not in parsed and line.startswith('description:'):
             # Assume that everything until the end of the file is part
             # of the description, so we can break once we pull in the
@@ -192,6 +218,8 @@ def main():
     parser.add_argument('-t', '--type', dest='change_type',
                         default='', choices=('bugfix', 'feature', 'deprecation'))
     parser.add_argument('-c', '--category', dest='category',
+                        default='')
+    parser.add_argument('-u', '--github_username', dest='github_username',
                         default='')
     parser.add_argument('-d', '--description', dest='description',
                         default='')
